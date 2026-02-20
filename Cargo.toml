@@ -13,6 +13,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "rustls-tls"] }
 dotenvy = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+chrono-tz = "0.10"
+rand = "0.8"
 
 # Solana ecosystem (to be wired once toolchain is installed)
 solana-sdk = "2"
