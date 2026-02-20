@@ -80,6 +80,8 @@ async fn main() -> Result<()> {
         let engine_pos = engine.clone();
         let store_path = cfg.state_path.clone();
         let tz = cfg.tz.clone();
+        let trading_journal_path = cfg.trading_journal_path.clone();
+        let slippage_bps = cfg.slippage_bps;
         let risk_params = risk_params.clone();
 
         tokio::spawn(async move {
@@ -122,11 +124,151 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                st.sync_mode_from_risk();
-                if let Err(e) = store.save(&st) {
-                    let _ = notifier_pos
-                        .alert(&format!("[SIE] state save failed (positions loop): {e}"))
-                        .await;
+                // Monitor open positions: compute price and enforce SL/TP/trailing.
+                // Exits are allowed even in READ_ONLY.
+                let mut closed_any = false;
+                let mut i = 0usize;
+                while i < st.positions.len() {
+                    let mut close_reason = None;
+
+                    let p = &mut st.positions[i];
+                    let price = match engine_pos
+                        .price_quote_per_base(&p.base_mint, &p.quote_mint)
+                        .await
+                    {
+                        Ok(px) => px,
+                        Err(e) => {
+                            let _ = notifier_pos
+                                .alert(&format!("[SIE] price fetch failed for {}: {e}", p.base_mint))
+                                .await;
+                            i += 1;
+                            continue;
+                        }
+                    };
+
+                    // update peak
+                    if price > p.peak_price {
+                        p.peak_price = price;
+                    }
+
+                    let pnl_pct = (price - p.entry_price) / p.entry_price;
+                    if !p.trailing_armed && pnl_pct >= p.trailing_arm_pct {
+                        p.trailing_armed = true;
+                    }
+
+                    let stop_price = if p.trailing_armed {
+                        p.peak_price * (1.0 - p.stop_loss_pct)
+                    } else {
+                        p.entry_price * (1.0 - p.stop_loss_pct)
+                    };
+                    let tp_price = p.entry_price * (1.0 + p.take_profit_pct);
+
+                    if price <= stop_price {
+                        close_reason = Some(if p.trailing_armed {
+                            crate::risk::ExitReason::TrailingStop
+                        } else {
+                            crate::risk::ExitReason::StopLoss
+                        });
+                    } else if price >= tp_price {
+                        close_reason = Some(crate::risk::ExitReason::TakeProfit);
+                    }
+
+                    if let Some(reason) = close_reason {
+                        // Market exit: sell base -> quote.
+                        let res = engine_pos
+                            .execute_swap(crate::engine::SwapPlan {
+                                input_mint: p.base_mint.clone(),
+                                output_mint: p.quote_mint.clone(),
+                                in_amount: p.base_amount,
+                                slippage_bps,
+                            })
+                            .await;
+
+                        match res {
+                            Ok(r) => {
+                                p.sell_tx = Some(r.signature.clone());
+
+                                // Realized pnl estimate based on current price.
+                                // base tokens (approx) = base_amount / 10^decimals, but we don't persist decimals yet.
+                                // We approximate with entry size in USDC for accounting scaffold.
+                                let est_exit_usdc = p.size_usdc * (1.0 + pnl_pct);
+                                let pnl_usdc = est_exit_usdc - p.size_usdc;
+
+                                let ev = st.risk.register_realized_pnl(&risk_params, pnl_usdc);
+                                st.sync_mode_from_risk();
+
+                                let _ = notifier_pos
+                                    .alert(&format!(
+                                        "[SIE] SELL {} reason={:?} pnl=${:.2} ({:.2}%) tx={} mode={:?}",
+                                        p.base_mint,
+                                        reason,
+                                        pnl_usdc,
+                                        pnl_pct * 100.0,
+                                        r.signature,
+                                        st.risk.mode
+                                    ))
+                                    .await;
+
+                                // Journal append (best-effort)
+                                let _ = crate::journal::append_trade_close(
+                                    &trading_journal_path,
+                                    "momentum-scalping", // placeholder until strategy tags positions
+                                    &format!("{}/{}", p.base_mint, p.quote_mint),
+                                    p.buy_tx.as_deref().unwrap_or(""),
+                                    p.sell_tx.as_deref().unwrap_or(""),
+                                    p.size_usdc,
+                                    pnl_usdc,
+                                    pnl_pct,
+                                    reason,
+                                    "auto-exit via risk rules",
+                                    "N/A (pricefeed scaffold)",
+                                );
+
+                                // Remove position
+                                st.positions.remove(i);
+                                closed_any = true;
+
+                                // React to mode transitions.
+                                if matches!(ev, RiskEvent::EnterReadOnly) {
+                                    let _ = notifier_pos
+                                        .alert("[SIE] READ_ONLY entered: daily loss limit reached")
+                                        .await;
+                                }
+                                if matches!(ev, RiskEvent::EnterEmergencyStop) {
+                                    let _ = notifier_pos
+                                        .alert("[SIE] EMERGENCY STOP entered: portfolio hard stop reached")
+                                        .await;
+                                    // Liquidate remaining positions ASAP (loop continues)
+                                }
+
+                                continue; // do not increment i (we removed current)
+                            }
+                            Err(e) => {
+                                let _ = notifier_pos
+                                    .alert(&format!("[SIE] SELL failed for {}: {e}", p.base_mint))
+                                    .await;
+                                i += 1;
+                                continue;
+                            }
+                        }
+                    }
+
+                    i += 1;
+                }
+
+                if closed_any {
+                    if let Err(e) = store.save(&st) {
+                        let _ = notifier_pos
+                            .alert(&format!("[SIE] state save failed after closes: {e}"))
+                            .await;
+                    }
+                } else {
+                    st.sync_mode_from_risk();
+                    if let Err(e) = store.save(&st) {
+                        let _ = notifier_pos
+                            .alert(&format!("[SIE] state save failed (positions loop): {e}"))
+                            .await;
+                    }
                 }
             }
         });

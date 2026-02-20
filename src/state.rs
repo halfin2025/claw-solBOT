@@ -12,9 +12,14 @@ pub struct Position {
     pub id: String,
     pub base_mint: String,
     pub quote_mint: String,
+
+    /// Position size expressed in quote currency (USDC) at entry time.
     pub size_usdc: f64,
 
-    // pricing (placeholder until we wire real price feed)
+    /// Base token amount in base units (mint decimals).
+    pub base_amount: u64,
+
+    // pricing (quote per 1 base token)
     pub entry_price: f64,
     pub peak_price: f64,
 

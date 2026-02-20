@@ -146,6 +146,49 @@ impl Engine {
         Ok(micro)
     }
 
+    /// Returns the price as: quote_amount / base_amount for 1 base token.
+    ///
+    /// Uses Jupiter quote and Solana RPC to resolve decimals.
+    pub async fn price_quote_per_base(&self, base_mint: &str, quote_mint: &str) -> Result<f64> {
+        // Resolve decimals via RPC (token supply).
+        let base_supply = self
+            .rpc
+            .get_token_supply(&base_mint.parse()?)
+            .await?
+            .value;
+        let quote_supply = self
+            .rpc
+            .get_token_supply(&quote_mint.parse()?)
+            .await?
+            .value;
+
+        let base_dec = base_supply.decimals as u32;
+        let quote_dec = quote_supply.decimals as u32;
+
+        let one_base_units: u64 = 10u64
+            .checked_pow(base_dec)
+            .ok_or_else(|| anyhow!("base decimals too large"))?;
+
+        let quote = self
+            .jup
+            .quote(QuoteRequest {
+                input_mint: base_mint.to_string(),
+                output_mint: quote_mint.to_string(),
+                amount: one_base_units.to_string(),
+                slippage_bps: self.cfg.slippage_bps,
+                only_direct_routes: None,
+            })
+            .await?;
+
+        let out_amount: u64 = quote
+            .out_amount
+            .parse()
+            .map_err(|_| anyhow!("invalid jupiter outAmount"))?;
+
+        let out_quote = out_amount as f64 / 10f64.powi(quote_dec as i32);
+        Ok(out_quote) // per 1 base
+    }
+
     /// Emergency: close all positions immediately (market exit via Jupiter).
     pub async fn close_all_positions(&self) -> Result<()> {
         warn!(dry_run = self.cfg.dry_run, "engine.close_all_positions.stub");
