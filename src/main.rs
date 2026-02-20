@@ -1,6 +1,7 @@
 mod config;
 mod engine;
 mod journal;
+mod jupiter;
 mod logger;
 mod monitoring;
 mod notifier;

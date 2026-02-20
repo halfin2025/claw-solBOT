@@ -15,8 +15,10 @@ dotenvy = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 chrono-tz = "0.10"
 rand = "0.8"
+base64 = "0.22"
+bincode = "1"
 
-# Solana ecosystem (to be wired once toolchain is installed)
+# Solana ecosystem
 solana-sdk = "2"
-solana-client = "2"
+solana-client = { version = "2", features = ["async"] }
 solana-transaction-status = "2"

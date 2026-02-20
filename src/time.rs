@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{Datelike};
+use chrono::Datelike;
 
 /// Returns YYYY-MM-DD in the configured timezone.
 ///
