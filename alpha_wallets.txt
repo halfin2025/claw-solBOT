@@ -1,0 +1,3 @@
+# Alpha wallets (public keys only)
+7Zp3mH9Qxw2h7pLk8cVZk9B8WbJgQmK3XkQZpWm5eYkD
+8bX8p9jX9mJr9z5qHkY6y2vL8nZcGdWmQk1p2r3s4t5u

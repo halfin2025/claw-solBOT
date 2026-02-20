@@ -1,0 +1,18 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Env / secrets
+.env
+
+# Local state (future)
+state/
+positions.json
+exit_plans.json
+incidents.jsonl
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
