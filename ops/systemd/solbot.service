@@ -1,0 +1,30 @@
+[Unit]
+Description=Claw SOL Bot (Solana Infinity Engine)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/claw-solbot
+
+# Load env vars
+EnvironmentFile=/opt/claw-solbot/.env
+
+# Build+run release (native install)
+ExecStart=/usr/bin/bash -lc '/usr/bin/cargo run --release'
+Restart=always
+RestartSec=3
+
+# Hardening (keep practical; adjust as needed)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/claw-solbot
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

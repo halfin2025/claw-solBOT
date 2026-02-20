@@ -22,6 +22,9 @@ Configurar `SLACK_WEBHOOK_URL`.
 cargo run
 ```
 
+## Ops (native)
+Ver `ops/README.md` para instalación nativa + systemd.
+
 ## Documentación evolutiva
 - `docs/trading.md` se actualiza al cerrar cada posición.
 
