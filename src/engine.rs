@@ -189,10 +189,19 @@ impl Engine {
         Ok(out_quote) // per 1 base
     }
 
-    /// Emergency: close all positions immediately (market exit via Jupiter).
-    pub async fn close_all_positions(&self) -> Result<()> {
-        warn!(dry_run = self.cfg.dry_run, "engine.close_all_positions.stub");
-        // TODO: iterate positions from state, build market exits, simulate+send
-        Ok(())
+    /// Emergency helper: closes a single position (market exit base->quote).
+    pub async fn close_position_market(
+        &self,
+        base_mint: String,
+        quote_mint: String,
+        base_amount: u64,
+    ) -> Result<SwapResult> {
+        self.execute_swap(SwapPlan {
+            input_mint: base_mint,
+            output_mint: quote_mint,
+            in_amount: base_amount,
+            slippage_bps: self.cfg.slippage_bps,
+        })
+        .await
     }
 }

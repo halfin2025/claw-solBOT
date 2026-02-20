@@ -117,9 +117,60 @@ async fn main() -> Result<()> {
                     let _ = notifier_pos
                         .alert("[SIE] EMERGENCY STOP active: closing all positions immediately")
                         .await;
-                    if let Err(e) = engine_pos.close_all_positions().await {
+
+                    // Liquidate sequentially; keep trying even if some closes fail.
+                    let mut idx = 0usize;
+                    while idx < st.positions.len() {
+                        let p = &st.positions[idx];
+                        match engine_pos
+                            .close_position_market(
+                                p.base_mint.clone(),
+                                p.quote_mint.clone(),
+                                p.base_amount,
+                            )
+                            .await
+                        {
+                            Ok(r) => {
+                                let _ = notifier_pos
+                                    .alert(&format!(
+                                        "[SIE] HARD STOP SELL {} tx={} ",
+                                        p.base_mint, r.signature
+                                    ))
+                                    .await;
+
+                                // Best-effort journal entry
+                                let _ = crate::journal::append_trade_close(
+                                    &trading_journal_path,
+                                    "hard-stop",
+                                    &format!("{}/{}", p.base_mint, p.quote_mint),
+                                    p.buy_tx.as_deref().unwrap_or(""),
+                                    &r.signature,
+                                    p.size_usdc,
+                                    0.0,
+                                    0.0,
+                                    crate::risk::ExitReason::HardStop,
+                                    "portfolio hard stop: emergency liquidation",
+                                    "N/A",
+                                );
+
+                                st.positions.remove(idx);
+                                continue;
+                            }
+                            Err(e) => {
+                                let _ = notifier_pos
+                                    .alert(&format!(
+                                        "[SIE] HARD STOP SELL FAILED {}: {e}",
+                                        p.base_mint
+                                    ))
+                                    .await;
+                                idx += 1;
+                            }
+                        }
+                    }
+
+                    if let Err(e) = store.save(&st) {
                         let _ = notifier_pos
-                            .alert(&format!("[SIE] emergency liquidation failed: {e}"))
+                            .alert(&format!("[SIE] state save failed after hard stop liquidation: {e}"))
                             .await;
                     }
                 }
