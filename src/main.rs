@@ -8,6 +8,7 @@ mod notifier;
 mod risk;
 mod state;
 mod time;
+mod strategy;
 
 use anyhow::Result;
 use rand::{thread_rng, Rng};
@@ -167,11 +168,26 @@ async fn main() -> Result<()> {
                     continue;
                 }
 
-                // TODO:
-                // - evaluate strategies
-                // - build TradeIntent
+                // Strategy (momentum scalping) - DRY-RUN scaffold.
+                // NOTE: We still don't have candle/volume feed wired, so this emits no intents.
+                let scalper = crate::strategy::momentum::MomentumScalper::new(
+                    // USDC mint (mainnet)
+                    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+                    risk_params.position_size_usdc,
+                    vec![],
+                );
+                if let Ok(intents) = scalper.evaluate() {
+                    if !intents.is_empty() {
+                        let _ = notifier_mkt
+                            .alert(&format!("[SIE] momentum intents: {}", intents.len()))
+                            .await;
+                    }
+                }
+
+                // TODO next:
+                // - wire candle source (1m/5m) and volume breakout
                 // - risk gate + max positions
-                // - call engine.execute_swap
+                // - call engine.execute_swap (simulateTransaction mandatory)
 
                 st.sync_mode_from_risk();
                 if let Err(e) = store.save(&st) {
