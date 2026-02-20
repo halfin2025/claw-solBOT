@@ -3,46 +3,41 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    // Primary + failover RPC
+    // RPC
     pub helius_http_url: String,
     pub helius_wss_url: String,
     pub quicknode_http_url: Option<String>,
     pub quicknode_wss_url: Option<String>,
-    pub rpc_failover_p95_ms: u64,
+
+    // Alerts
+    pub slack_webhook_url: Option<String>,
+
+    // Runtime
+    pub dry_run: bool,
+    pub tz: String,
+
+    // Risk (defaults match spec)
+    pub capital_usdc: f64,
+    pub position_size_usdc: f64,
+    pub max_open_positions: usize,
+    pub max_daily_loss_pct: f64,
+    pub stop_loss_pct: f64,
+    pub take_profit_pct: f64,
+    pub trailing_arm_pct: f64,
+    pub portfolio_hard_stop_pct: f64,
 
     // Execution
-    pub dry_run: bool,
+    pub jupiter_base_url: String,
+    pub slippage_bps: u64,
+    pub max_slippage_bps: u64,
+
+    // Keys
     pub sol_keypair_path: Option<String>,
 
-    // Alpha / copy-trade inputs
-    pub alpha_wallets_path: String,
-
-    // Jito
-    pub jito_bundle_url: Option<String>,
-    pub jito_auth_token: Option<String>,
-    pub jito_tip_lamports: u64,
-
-    // Strategy
-    pub quote_asset: QuoteAsset,
-    pub max_new_token_size_sol: f64,
-    pub max_established_token_size_sol: f64,
-
-    // Risk
-    pub max_daily_dd_pct: f64,
-    pub panic_liquidity_drop_pct: f64,
-    pub max_usdc_per_trade: f64,
-    pub max_daily_loss_usdc: f64,
-    pub max_open_positions: usize,
-
-    // Back-compat (older env names)
-    pub rpc_http_legacy: Option<String>,
-    pub rpc_ws_legacy: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum QuoteAsset {
-    SOL,
-    USDC,
+    // Persistence
+    pub state_path: String,
+    pub heartbeat_log_path: String,
+    pub trading_journal_path: String,
 }
 
 fn env_bool(key: &str, default: bool) -> bool {
@@ -61,7 +56,7 @@ fn env_parse<T: std::str::FromStr>(key: &str) -> Option<T> {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        // New names (preferred)
+        // RPC
         let helius_http_url = std::env::var("HELIUS_HTTP_URL")
             .or_else(|_| std::env::var("SIE_RPC_HTTP"))
             .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
@@ -72,65 +67,65 @@ impl Config {
         let quicknode_http_url = std::env::var("QUICKNODE_HTTP_URL").ok();
         let quicknode_wss_url = std::env::var("QUICKNODE_WSS_URL").ok();
 
-        let rpc_failover_p95_ms = env_parse::<u64>("RPC_FAILOVER_P95_MS").unwrap_or(150);
+        // Alerts
+        let slack_webhook_url = std::env::var("SLACK_WEBHOOK_URL").ok();
 
+        // Runtime
         let dry_run = env_bool("DRY_RUN", true);
+        let tz = std::env::var("SIE_TZ").unwrap_or_else(|_| "America/Buenos_Aires".to_string());
+
+        // Risk
+        let capital_usdc = env_parse::<f64>("SIE_CAPITAL_USDC").unwrap_or(200.0);
+        let position_size_usdc = env_parse::<f64>("SIE_POSITION_SIZE_USDC").unwrap_or(20.0);
+        let max_open_positions = env_parse::<usize>("MAX_OPEN_POSITIONS").unwrap_or(5);
+        let max_daily_loss_pct = env_parse::<f64>("SIE_MAX_DAILY_LOSS_PCT").unwrap_or(0.03);
+        let stop_loss_pct = env_parse::<f64>("SIE_STOP_LOSS_PCT").unwrap_or(0.10);
+        let take_profit_pct = env_parse::<f64>("SIE_TAKE_PROFIT_PCT").unwrap_or(0.40);
+        let trailing_arm_pct = env_parse::<f64>("SIE_TRAILING_ARM_PCT").unwrap_or(0.15);
+        let portfolio_hard_stop_pct = env_parse::<f64>("SIE_PORTFOLIO_HARD_STOP_PCT").unwrap_or(0.20);
+
+        if position_size_usdc <= 0.0 || capital_usdc <= 0.0 {
+            return Err(anyhow!("invalid capital/position size"));
+        }
+
+        // Execution
+        let jupiter_base_url = std::env::var("JUPITER_BASE_URL")
+            .unwrap_or_else(|_| "https://quote-api.jup.ag".to_string());
+        let slippage_bps = env_parse::<u64>("SIE_SLIPPAGE_BPS").unwrap_or(50);
+        let max_slippage_bps = env_parse::<u64>("SIE_MAX_SLIPPAGE_BPS").unwrap_or(100);
+        if slippage_bps > max_slippage_bps {
+            return Err(anyhow!("SIE_SLIPPAGE_BPS cannot exceed SIE_MAX_SLIPPAGE_BPS"));
+        }
+
         let sol_keypair_path = std::env::var("SOL_KEYPAIR_PATH").ok();
 
-        let alpha_wallets_path = std::env::var("ALPHA_WALLETS_PATH")
-            .unwrap_or_else(|_| "./alpha_wallets.txt".to_string());
-
-        let jito_bundle_url = std::env::var("JITO_BUNDLE_URL").ok();
-        let jito_auth_token = std::env::var("JITO_AUTH_TOKEN").ok();
-        let jito_tip_lamports = env_parse::<u64>("JITO_TIP_LAMPORTS").unwrap_or(5_000);
-
-        // Strategy / risk (keep legacy SIE_* envs too)
-        let quote_asset = match std::env::var("SIE_QUOTE_ASSET")
-            .or_else(|_| std::env::var("QUOTE_ASSET"))
-            .unwrap_or_else(|_| "USDC".to_string())
-            .to_uppercase()
-            .as_str()
-        {
-            "SOL" => QuoteAsset::SOL,
-            "USDC" => QuoteAsset::USDC,
-            other => return Err(anyhow!("invalid QUOTE_ASSET/SIE_QUOTE_ASSET: {other}")),
-        };
-
-        let max_new_token_size_sol = env_parse::<f64>("SIE_MAX_NEW_TOKEN_SIZE_SOL").unwrap_or(0.5);
-        let max_established_token_size_sol = env_parse::<f64>("SIE_MAX_ESTABLISHED_TOKEN_SIZE_SOL").unwrap_or(5.0);
-        let max_daily_dd_pct = env_parse::<f64>("SIE_MAX_DAILY_DD_PCT").unwrap_or(0.05);
-        let panic_liquidity_drop_pct = env_parse::<f64>("SIE_PANIC_LIQUIDITY_DROP_PCT").unwrap_or(0.20);
-
-        let max_usdc_per_trade = env_parse::<f64>("MAX_USDC_PER_TRADE").unwrap_or(5.0);
-        let max_daily_loss_usdc = env_parse::<f64>("MAX_DAILY_LOSS_USDC").unwrap_or(10.0);
-        let max_open_positions = env_parse::<usize>("MAX_OPEN_POSITIONS").unwrap_or(3);
-
-        // Back-compat capture
-        let rpc_http_legacy = std::env::var("SIE_RPC_HTTP").ok();
-        let rpc_ws_legacy = std::env::var("SIE_RPC_WS").ok();
+        let state_path = std::env::var("SIE_STATE_PATH").unwrap_or_else(|_| "./state.json".to_string());
+        let heartbeat_log_path = std::env::var("SIE_HEARTBEAT_LOG").unwrap_or_else(|_| "./heartbeat.log".to_string());
+        let trading_journal_path = std::env::var("SIE_TRADING_MD").unwrap_or_else(|_| "./docs/trading.md".to_string());
 
         Ok(Self {
             helius_http_url,
             helius_wss_url,
             quicknode_http_url,
             quicknode_wss_url,
-            rpc_failover_p95_ms,
+            slack_webhook_url,
             dry_run,
-            sol_keypair_path,
-            alpha_wallets_path,
-            jito_bundle_url,
-            jito_auth_token,
-            jito_tip_lamports,
-            quote_asset,
-            max_new_token_size_sol,
-            max_established_token_size_sol,
-            max_daily_dd_pct,
-            panic_liquidity_drop_pct,
-            max_usdc_per_trade,
-            max_daily_loss_usdc,
+            tz,
+            capital_usdc,
+            position_size_usdc,
             max_open_positions,
-            rpc_http_legacy,
-            rpc_ws_legacy,
+            max_daily_loss_pct,
+            stop_loss_pct,
+            take_profit_pct,
+            trailing_arm_pct,
+            portfolio_hard_stop_pct,
+            jupiter_base_url,
+            slippage_bps,
+            max_slippage_bps,
+            sol_keypair_path,
+            state_path,
+            heartbeat_log_path,
+            trading_journal_path,
         })
     }
 }

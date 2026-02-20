@@ -1,18 +1,30 @@
-# Solana Infinity Engine (SIE)
+# Claw SOL Bot (Solana Infinity Engine)
 
-High-frequency Solana trading bot focused on:
-- New pool detection (Raydium / Meteora / Pump.fun)
-- Fast execution (Jupiter v6 + Jito bundles)
-- Defensive risk controls (anti-honeypot, liquidity shock exits)
+Bot de trading autónomo en Solana con **gestión de riesgo estricta**.
 
-This repo is intentionally **separate** from the Polymarket bot.
+## Objetivo
+- Ejecutar estrategias (momentum scalping, anti-rug sniping, LST arb)
+- **Cumplir reglas de riesgo sin excepción** (daily loss -3%, SL/TP, hard stop)
+- Ejecución vía **Jupiter v6+** (y anti-MEV con Jito cuando aplique)
 
-## Status
-Scaffold only (Rust toolchain not yet installed on this host).
+## Estado
+- Scaffold inicial (daemon + config + logging + notifier Slack)
+- Falta implementar: Jupiter engine, estrategias, persistencia completa `state.json`, simulación, priority fees, Jito bundles.
 
-## Next steps
-1) Install Rust toolchain (`rustup` + `cargo`) or system packages.
-2) `cargo build` + start implementing scanner modules.
+## Configuración
+Copia `.env.example` a `.env` y completa lo necesario.
 
-## Non-goals
-No support for fraud / rug-pull creation.
+### Slack Alerts
+Configurar `SLACK_WEBHOOK_URL`.
+
+## Run
+```bash
+cargo run
+```
+
+## Documentación evolutiva
+- `docs/trading.md` se actualiza al cerrar cada posición.
+
+## Seguridad
+- No se implementa nada relacionado a creación de rugs/fraude.
+- El bot debe entrar en **READ_ONLY** al alcanzar el límite diario de pérdida.

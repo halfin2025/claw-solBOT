@@ -1,21 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PoolCandidate {
-    pub venue: Venue,
-    pub pool_address: String,
-    pub base_mint: String,
-    pub quote_mint: String,
-    pub slot: u64,
-    pub tx_sig: String,
-    pub detected_at_ms: u64,
+pub enum Strategy {
+    MomentumScalping,
+    AntiRugSniping,
+    LstArb,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Venue {
-    Raydium,
-    Meteora,
-    PumpFun,
+pub struct TradeIntent {
+    pub strategy: Strategy,
+    pub base_mint: String,
+    pub quote_mint: String,
+    pub size_usdc: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

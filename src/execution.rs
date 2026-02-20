@@ -1,6 +1,7 @@
-// Execution engine
+// Execution / Engine (Jupiter v6+)
 //
-// TODO:
-// - Jupiter v6 quote+swap builder
-// - Jito bundle submission
-// - priority fee / CU autotuning
+// Roadmap:
+// - Quote + swap builder (Jupiter)
+// - simulateTransaction obligatorio antes de enviar
+// - dynamic priority fees
+// - anti-MEV: Jito bundles + slippage policy
